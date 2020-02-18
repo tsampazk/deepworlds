@@ -36,7 +36,7 @@ class PitEscapeSupervisor(SupervisorCSV):
     5	BB-8 Accelerometer Z axis   -Inf            Inf
 
     Actions:
-        Type: Continuous(2)
+        Type: Continuous(2) TODO change this to discrete
         Action                   Min         Max
         pitch motor control   -maxSpeed    maxSpeed
         yaw motor control     -maxSpeed    maxSpeed
@@ -46,7 +46,7 @@ class PitEscapeSupervisor(SupervisorCSV):
     Reward:
         TODO describe reward function
     Starting State:
-        [0.0, 0.0, 0.0]
+        [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
     Episode Termination:
         TODO describe done conditions
     """
@@ -64,7 +64,7 @@ class PitEscapeSupervisor(SupervisorCSV):
         print("Robot is spawned in code, if you want to inspect it pause the simulation.")
         super().__init__()
         self.observationSpace = 6
-        self.actionSpace = 2
+        self.actionSpace = 3
         self.agent = PPOAgent(self.observationSpace, self.actionSpace)
 
         self.robot = None
@@ -224,7 +224,7 @@ supervisor = PitEscapeSupervisor()
 supervisor = KeyboardControllerPitEscape(supervisor)
 
 solved = False  # Whether the solved requirement is met
-repeatActionSteps = 0
+repeatActionSteps = 20
 # Run outer loop until the episodes limit is reached or the task is solved
 while not solved and supervisor.controller.episodeCount < supervisor.controller.episodeLimit:
     state = supervisor.controller.reset()  # Reset robot and get starting observation
@@ -234,21 +234,19 @@ while not solved and supervisor.controller.episodeCount < supervisor.controller.
     for step in range(supervisor.controller.stepsPerEpisode):
         # In training mode the agent samples from the probability distribution, naturally implementing exploration
         actionValues, actionProb = supervisor.controller.agent.work(state, type_="selectAction")
-        actionValues = tensor([normalizeToRange(actionValues[i], -1.5, 1.5, -8.72, 8.72, clip=True) for i in
-                               range(len(actionValues))])
         # Step the supervisor to get the current action's reward, the new state and whether we reached the done
         # condition
-        newState, reward, done, info = supervisor.step(actionValues.numpy(), repeatActionSteps)
+        newState, reward, done, info = supervisor.step([actionValues], repeatActionSteps)
 
         # Save the current state transition in agent's memory
         trans = Transition(state, actionValues, actionProb, reward, newState)
         supervisor.controller.agent.storeTransition(trans)
 
-        supervisor.controller.agent.trainStep()
+        # supervisor.controller.agent.trainStep()
         if done:
             # Save the episode's score
             supervisor.controller.episodeScoreList.append(supervisor.controller.episodeScore)
-            # supervisor.controller.agent.trainStep(batchSize=step)
+            supervisor.controller.agent.trainStep(batchSize=step)
             solved = supervisor.controller.solved()  # Check whether the task is solved
             break
 
