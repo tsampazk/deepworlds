@@ -1,15 +1,14 @@
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
-from torch.distributions import MultivariateNormal
+from torch.distributions import Categorical
 from torch import from_numpy, no_grad, save, load, tensor, clamp
 from torch import float as torch_float
-from torch import sigmoid
+from torch import long as torch_long
 from torch import min as torch_min
 from torch.utils.data.sampler import BatchSampler, SubsetRandomSampler
 import numpy as np
-from torch import manual_seed, clamp
-import torch
+from torch import manual_seed
 from collections import namedtuple
 
 Transition = namedtuple('Transition', ['state', 'action', 'a_log_prob', 'reward', 'next_state'])
@@ -51,7 +50,7 @@ class PPOAgent:
         # Training stats
         self.buffer = []
 
-    def work(self, agentInput, type_="simple", grad=False):
+    def work(self, agentInput, type_="simple"):
         """
         type_ == "simple"
             Implementation for a simple forward pass.
@@ -64,28 +63,18 @@ class PPOAgent:
         agentInput = from_numpy(np.array(agentInput)).float().unsqueeze(0)
         if self.use_cuda:
             agentInput = agentInput.cuda()
-        if not grad:
-            with no_grad():
-                action_mean = self.actor_net(agentInput)[0]
-        else:
-            action_mean = self.actor_net(agentInput)[0]
+        with no_grad():
+            action_prob = self.actor_net(agentInput)
+
         if type_ == "simple":
-            output = [action_mean[0][i].data.tolist() for i in range(len(action_mean[0]))]
+            output = [action_prob[0][i].data.tolist() for i in range(len(action_prob[0]))]
             return output
         elif type_ == "selectAction":
-            cov_mat = torch.diag(self.actor_net.action_var)
-            dist = MultivariateNormal(action_mean, cov_mat)
-            action = dist.sample()
-            action_logprob = dist.log_prob(action)
-            if not grad:
-                return action.detach(), action_logprob.detach()
-            else:
-                return action, action_logprob
+            c = Categorical(action_prob)
+            action = c.sample()
+            return action.item(), action_prob[:, action.item()].item()
         elif type_ == "selectActionMax":
-            if not grad:
-                return action_mean.detach()
-            else:
-                return action_mean
+            return np.argmax(action_prob).item(), 1.0
         else:
             print("Wrong type in agent.work(), returning input")
             return [agentInput[0][i].tolist() for i in range(agentInput.size()[1])]
@@ -141,7 +130,7 @@ class PPOAgent:
             batchSize = self.batch_size
 
         state = tensor([t.state for t in self.buffer], dtype=torch_float)
-        action = tensor([t.action.numpy() for t in self.buffer], dtype=torch_float).view(-1, 2)
+        action = tensor([t.action for t in self.buffer], dtype=torch_long).view(-1, 1)
         reward = [t.reward for t in self.buffer]
         old_action_log_prob = tensor([t.a_log_prob for t in self.buffer], dtype=torch_float).view(-1, 1)
 
@@ -166,8 +155,8 @@ class PPOAgent:
                 advantage = delta.detach()
 
                 # Get the current prob
-                _, action_prob = self.work(state[index], type_="selectAction", grad=True)  # new policy
-                action_prob = action_prob.view(-1, 1)
+                action_prob = self.actor_net(state[index]).gather(1, action[index])  # new policy
+
                 # PPO
                 ratio = (action_prob / old_action_log_prob[index])
                 surr1 = ratio * advantage
@@ -191,28 +180,25 @@ class PPOAgent:
 
 
 class Actor(nn.Module):
-    def __init__(self, numberOfInputs, numberOfOutputs, action_std=0.5):
+    def __init__(self, numberOfInputs, numberOfOutputs):
         super(Actor, self).__init__()
-        self.numberOfOutputs = numberOfOutputs
-        self.fc1 = nn.Linear(numberOfInputs, 100)
-        self.fc2 = nn.Linear(100, 100)
-        self.action_head = nn.Linear(100, numberOfOutputs)
-
-        self.action_var = torch.full((numberOfOutputs,), action_std * action_std)
+        self.fc1 = nn.Linear(numberOfInputs, 10)
+        self.fc2 = nn.Linear(10, 10)
+        self.action_head = nn.Linear(10, numberOfOutputs)
 
     def forward(self, x):
         x = F.relu(self.fc1(x))
         x = F.relu(self.fc2(x))
-        action_prob = sigmoid(self.action_head(x))
+        action_prob = F.softmax(self.action_head(x), dim=1)
         return action_prob
 
 
 class Critic(nn.Module):
     def __init__(self, numberOfInputs):
         super(Critic, self).__init__()
-        self.fc1 = nn.Linear(numberOfInputs, 100)
-        self.fc2 = nn.Linear(100, 100)
-        self.state_value = nn.Linear(100, 1)
+        self.fc1 = nn.Linear(numberOfInputs, 10)
+        self.fc2 = nn.Linear(10, 10)
+        self.state_value = nn.Linear(10, 1)
 
     def forward(self, x):
         x = F.relu(self.fc1(x))
