@@ -1,5 +1,5 @@
 from deepbots.robots.controllers.robot_emitter_receiver_csv import RobotEmitterReceiverCSV
-from numpy import clip, isnan
+from numpy import argmax, isnan
 
 
 class PitEscapeRobot(RobotEmitterReceiverCSV):
@@ -56,8 +56,17 @@ class PitEscapeRobot(RobotEmitterReceiverCSV):
 
         :param message: list of strings, the message the supervisor sent, containing the next action
         """
-        pitchSpeed = clip(float(message[0]), -self.maxSpeed, self.maxSpeed)
-        yawSpeed = clip(float(message[1]), -self.maxSpeed, self.maxSpeed)
+        pitchSpeed = 0
+        yawSpeed = 0
+        action = int(message[0])
+        if action == 0:
+            pitchSpeed = self.maxSpeed
+        elif action == 1:
+            pitchSpeed = -self.maxSpeed
+        # elif action == 3:
+        #     yawSpeed = self.maxSpeed
+        # elif action == 4:
+        #     yawSpeed = -self.maxSpeed
 
         self.pitchMotor.setVelocity(pitchSpeed)
         self.yawMotor.setVelocity(yawSpeed)
