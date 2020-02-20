@@ -59,14 +59,19 @@ class PitEscapeRobot(RobotEmitterReceiverCSV):
         pitchSpeed = 0
         yawSpeed = 0
         action = int(message[0])
+        # print("new action:", end="")
         if action == 0:
+            # print("pitch +")
             pitchSpeed = self.maxSpeed
         elif action == 1:
+            # print("pitch -")
             pitchSpeed = -self.maxSpeed
-        # elif action == 3:
-        #     yawSpeed = self.maxSpeed
-        # elif action == 4:
-        #     yawSpeed = -self.maxSpeed
+        elif action == 2:
+            # print("yaw +")
+            yawSpeed = self.maxSpeed
+        elif action == 3:
+            # print("yaw -")
+            yawSpeed = -self.maxSpeed
 
         self.pitchMotor.setVelocity(pitchSpeed)
         self.yawMotor.setVelocity(yawSpeed)
