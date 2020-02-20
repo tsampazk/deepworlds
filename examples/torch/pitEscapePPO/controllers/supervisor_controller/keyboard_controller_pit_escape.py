@@ -27,4 +27,7 @@ class KeyboardControllerPitEscape(KeyboardPrinter):
             print("User invoked reset method")
             self.controller.reset()
 
+        if key == ord("F"):
+            print("Step reward:", reward)
+
         return observation, reward, isDone, info
