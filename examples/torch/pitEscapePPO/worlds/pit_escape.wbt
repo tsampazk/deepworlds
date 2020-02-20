@@ -1,4 +1,4 @@
-#VRML_SIM R2019a utf8
+#VRML_SIM R2020a utf8
 WorldInfo {
   info [
     "The BB-8 robot has to climb out of the pit."
@@ -91,6 +91,7 @@ DEF GROUND Solid {
   ]
 }
 DEF PIT Pit {
+  translation -0.16 0 -0.16
   size 20 4 20
   pitRadius 2.7
 }
