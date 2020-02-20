@@ -55,8 +55,6 @@ class PitEscapeSupervisor(SupervisorCSV):
         """
         In the constructor, the agent object is created, the robot is spawned in the world via respawnRobot().
         Reference to robot is initialized here.
-        When in test mode (self.test = True) the agent stops being trained and controls the motors in a non
-        stochastic way.
 
         :param episodeLimit: int, upper limit of how many episodes to run
         :param stepsPerEpisode: int, how many steps to run each episode TODO maybe remove this
@@ -64,7 +62,7 @@ class PitEscapeSupervisor(SupervisorCSV):
         print("Robot is spawned in code, if you want to inspect it pause the simulation.")
         super().__init__()
         self.observationSpace = 6
-        self.actionSpace = 3
+        self.actionSpace = 4
         self.agent = PPOAgent(self.observationSpace, self.actionSpace)
 
         self.robot = None
@@ -81,8 +79,9 @@ class PitEscapeSupervisor(SupervisorCSV):
         self.longestDistance = 0.0
         self.oldMetric = 0.0
         self.metric = 0.0
-        self.time = self.supervisor.getTime()
+        self.time = self.supervisor.getTime()  # Current time
         self.startTime = 0.0
+        self.episodeTime = 0.0
         self.maxTime = 60.0
         self.pitRadius = self.supervisor.getFromDef("PIT").getField("pitRadius").getSFFloat()
 
@@ -101,56 +100,67 @@ class PitEscapeSupervisor(SupervisorCSV):
 
     def get_reward(self, action=None):
         """
-        TODO fill this
+        Reward method implementation works based on https://robotbenchmark.net/benchmark/pit_escape/ metric.
+        The metric is based on the robot's distance from the pit center. It gets updated when the maximum
+        distance from pit center achieved increases. If the robot escapes the pit, the metric is set to 0.5 plus
+        a term based on episode time elapsed.
 
-        :param action: None
-        :return: int
+        Thus, the metric monotonically increases and moves from 0.0 to 1.0 on instantaneous escape. Unsolved
+        episode's metric varies between 0.0 and 0.5 and solved episode's metric varies between 0.5 and 1.0.
+
+        The step reward return is the difference between the previous step's metric and the current metric. Due to
+        the fact that the metric increases monotonically, the difference returned is always >= 0, and > 0 at a step
+        where a higher distance from center is achieved.
+
+        :param action: None, get_reward doesn't need the action to calculate the reward
+        :return: float, step reward
         """
-        if self.oldMetric != self.metric:
-            change = self.metric - self.oldMetric
-            self.oldMetric = self.metric
-            return change
-        else:
-            return 0
-        # if self.longestDistance > self.pitRadius:
-        #     return 100
-        # else:
-        #     return 0
+        self.oldMetric = self.metric
+
+        distance = getDistanceFromCenter(self.robot)  # Calculate current distance from center
+        if distance > self.longestDistance:
+            self.longestDistance = distance  # Update max
+            self.metric = 0.5 * self.longestDistance / self.pitRadius  # Update metric
+
+        # Escaping increases metric over 0.5 based on time elapsed in episode
+        if self.longestDistance > self.pitRadius:
+            self.metric = 0.5 + 0.5 * (self.maxTime - self.episodeTime) / self.maxTime
+
+        # Step reward is how much the metric changed
+        return self.metric - self.oldMetric
 
     def is_done(self):
         """
-        # TODO fill this
+        Pit escape implementation counts time elapsed in current episode, based on episode's start time, and current
+        time taken from Webots supervisor. The episode is terminated after maxTime seconds, or when the episode is
+        solved, the robot is out of the pit.
 
         :return: bool, True if termination conditions are met, False otherwise
         """
+        doneFlag = False
+        self.episodeTime = self.time - self.startTime  # Update episode time
 
-        # Episode not solved, time's not up
-        episodeTime = self.time - self.startTime
-        if self.longestDistance < self.pitRadius and episodeTime < self.maxTime:
-            distance = getDistanceFromCenter(self.robot)  # Calculate current distance from center
-            if distance > self.longestDistance:
-                self.longestDistance = distance  # Update max
-                self.metric = 0.5 * self.longestDistance / self.pitRadius  # Update metric
-
-            self.time = self.supervisor.getTime()  # Update time
-
-        if self.longestDistance > self.pitRadius:
-            print("escaped")
-            self.metric = 0.5
-            if episodeTime < self.maxTime:
-                self.metric += 0.5 * (self.maxTime - episodeTime) / self.maxTime
-            self.startTime = self.time
-            self.longestDistance = 0.0
-            self.oldMetric = 0.0
-            self.metric = 0.0
-            return True
-        if episodeTime >= self.maxTime:
+        # Time's not up
+        if self.episodeTime < self.maxTime:
+            self.time = self.supervisor.getTime()  # Update current time
+        # Episode time run out
+        else:
+            doneFlag = True
             print("time's up")
-            self.startTime = self.time
+
+        # Episode solved
+        if self.longestDistance > self.pitRadius:
+            doneFlag = True
+            print("escaped")
+
+        if doneFlag:
+            self.startTime = self.time  # Update next episode's start time
+            # Reset reward related variables
             self.longestDistance = 0.0
-            self.oldMetric = 0.0
             self.metric = 0.0
+            self.oldMetric = 0.0
             return True
+
         return False
 
     def reset(self):
@@ -187,12 +197,12 @@ class PitEscapeSupervisor(SupervisorCSV):
     def solved(self):
         """
         This method checks whether the Pit Escape task is solved, so training terminates.
+        Task is considered solved when average score of last 100 episodes is > 0.75.
         :return: bool, True if task is solved, False otherwise
         """
-        # TODO fix this
-        # if len(self.episodeScoreList) > 100:  # Over 100 trials thus far
-        #     if np.mean(self.episodeScoreList[-100:]) > 195.0:  # Last 100 episodes' scores average value
-        #         return True
+        if len(self.episodeScoreList) > 100:  # Over 100 trials thus far
+            if np.mean(self.episodeScoreList[-100:]) > 0.75:  # Last 100 episodes' scores average value
+                return True
         return False
 
     def step(self, action, repeatSteps=None):
@@ -224,16 +234,20 @@ supervisor = PitEscapeSupervisor()
 supervisor = KeyboardControllerPitEscape(supervisor)
 
 solved = False  # Whether the solved requirement is met
-repeatActionSteps = 20
+repeatActionSteps = 0
 # Run outer loop until the episodes limit is reached or the task is solved
 while not solved and supervisor.controller.episodeCount < supervisor.controller.episodeLimit:
     state = supervisor.controller.reset()  # Reset robot and get starting observation
     supervisor.controller.episodeScore = 0
+    actionProbs = []  # This list holds the probability of each chosen action
 
     # Inner loop is the episode loop
     for step in range(supervisor.controller.stepsPerEpisode):
         # In training mode the agent samples from the probability distribution, naturally implementing exploration
         actionValues, actionProb = supervisor.controller.agent.work(state, type_="selectAction")
+        # Save the current selectedAction's probability
+        actionProbs.append(actionProb)
+
         # Step the supervisor to get the current action's reward, the new state and whether we reached the done
         # condition
         newState, reward, done, info = supervisor.step([actionValues], repeatActionSteps)
@@ -242,21 +256,23 @@ while not solved and supervisor.controller.episodeCount < supervisor.controller.
         trans = Transition(state, actionValues, actionProb, reward, newState)
         supervisor.controller.agent.storeTransition(trans)
 
-        # supervisor.controller.agent.trainStep()
+        supervisor.controller.episodeScore += reward  # Accumulate episode reward
         if done:
             # Save the episode's score
             supervisor.controller.episodeScoreList.append(supervisor.controller.episodeScore)
-            supervisor.controller.agent.trainStep(batchSize=step)
+            supervisor.controller.agent.trainStep(batchSize=step + 1)
             solved = supervisor.controller.solved()  # Check whether the task is solved
             break
 
-        supervisor.controller.episodeScore += reward  # Accumulate episode reward
         state = newState  # state for next step is current step's newState
 
     if supervisor.controller.test:  # If test flag is externally set to True, agent is deployed
         break
 
     print("Episode #", supervisor.controller.episodeCount, "score:", supervisor.controller.episodeScore)
+    # The average action probability tells us how "sure" the agent was of its actions.
+    # By looking at this we can check whether the agent is converging to a certain policy.
+    print("Avg action prob:", np.mean(actionProbs))
 
     supervisor.controller.episodeCount += 1  # Increment episode counter
 
