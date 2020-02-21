@@ -1,10 +1,8 @@
 import numpy as np
 from deepbots.supervisor.controllers.supervisor_emitter_receiver import SupervisorCSV
 from agent.PPOAgent import PPOAgent, Transition
-from utilities import normalizeToRange, getDistanceFromCenter
+from utilities import normalizeToRange, getDistanceFromCenter, plotData
 from keyboard_controller_pit_escape import KeyboardControllerPitEscape
-
-from torch import tensor
 
 
 class PitEscapeSupervisor(SupervisorCSV):
@@ -152,12 +150,10 @@ class PitEscapeSupervisor(SupervisorCSV):
         # Episode time run out
         else:
             doneFlag = True
-            print("time's up")
 
         # Episode solved
         if self.longestDistance > self.pitRadius:
             doneFlag = True
-            print("escaped")
 
         if doneFlag:
             self.startTime = self.time  # Update next episode's start time
@@ -242,6 +238,8 @@ supervisor = KeyboardControllerPitEscape(supervisor)
 
 solved = False  # Whether the solved requirement is met
 repeatActionSteps = 0  # Amount of steps for which to repeat a certain action
+averageEpisodeActionProbs = []  # Save average episode taken actions probability to plot later
+
 # Run outer loop until the episodes limit is reached or the task is solved
 while not solved and supervisor.controller.episodeCount < supervisor.controller.episodeLimit:
     state = supervisor.controller.reset()  # Reset robot and get starting observation
@@ -280,11 +278,20 @@ while not solved and supervisor.controller.episodeCount < supervisor.controller.
         break
 
     print("Episode #", supervisor.controller.episodeCount, "score:", supervisor.controller.episodeScore)
-    # The average action probability tells us how "sure" the agent was of its actions.
+    # The average action probability tells us how confident the agent was of its actions.
     # By looking at this we can check whether the agent is converging to a certain policy.
-    print("Avg action prob:", np.mean(actionProbs))
+    avgActionProb = np.mean(actionProbs)
+    averageEpisodeActionProbs.append(avgActionProb)
+    print("Avg action prob:", avgActionProb)
 
     supervisor.controller.episodeCount += 1  # Increment episode counter
+
+# np.convolve is used as a moving average, see https://stackoverflow.com/a/22621523
+movingAvgN = 10
+plotData(np.convolve(supervisor.controller.episodeScoreList, np.ones((movingAvgN,)) / movingAvgN, mode='valid'),
+         "episode", "episode score", "Episode scores over episodes")
+plotData(np.convolve(averageEpisodeActionProbs, np.ones((movingAvgN,)) / movingAvgN, mode='valid'),
+         "episode", "average episode action probability", "Average episode action probability over episodes")
 
 if not solved and not supervisor.controller.test:
     print("Reached episode limit and task was not solved.")
@@ -296,5 +303,10 @@ else:
     state = supervisor.controller.reset()
     supervisor.controller.test = True
     while True:
-        actionValues = supervisor.controller.agent.work(state, type_="selectActionMax")
-        state, _, _, _ = supervisor.step([actionValues])
+        # print(state)
+        actionValues, _ = supervisor.controller.agent.work(state, type_="selectActionMax")
+        # print(actionValues)
+        state, _, done, _ = supervisor.step([actionValues])
+
+        if done:
+            supervisor.controller.reset()
