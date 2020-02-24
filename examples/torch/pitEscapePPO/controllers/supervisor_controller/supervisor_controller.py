@@ -199,11 +199,11 @@ class PitEscapeSupervisor(SupervisorCSV):
     def solved(self):
         """
         This method checks whether the Pit Escape task is solved, so training terminates.
-        Task is considered solved when average score of last 100 episodes is > 0.90.
+        Task is considered solved when average score of last 100 episodes is > 0.85.
         :return: bool, True if task is solved, False otherwise
         """
         if len(self.episodeScoreList) > 100:  # Over 100 trials thus far
-            if np.mean(self.episodeScoreList[-100:]) > 0.90:  # Last 100 episodes' scores average value
+            if np.mean(self.episodeScoreList[-100:]) > 0.85:  # Last 100 episodes' scores average value
                 return True
         return False
 
