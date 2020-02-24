@@ -103,6 +103,6 @@ DEF SUPERVISOR Robot {
     }
   ]
   name "supervisor"
-  controller "supervisor_controller"
+  controller "supervisor_manager"
   supervisor TRUE
 }
