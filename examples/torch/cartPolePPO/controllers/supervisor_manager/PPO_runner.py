@@ -4,6 +4,7 @@ from supervisor_controller import CartPoleSupervisor
 from keyboard_controller_cartpole import KeyboardControllerCartPole
 from agent.PPO_agent import PPOAgent, Transition
 from utilities import plotData
+from time import time
 
 
 def run():
@@ -16,12 +17,18 @@ def run():
     agent = PPOAgent(supervisorPre.observationSpace, supervisorPre.actionSpace)
 
     episodeCount = 0
-    episodeLimit = 2000
+    episodeLimit = 5000
     solved = False  # Whether the solved requirement is met
     averageEpisodeActionProbs = []  # Save average episode taken actions probability to plot later
 
+    startTime = time()  # Start counting real training time
+    simTime = 0  # Accumulator for simulated time elapsed
+
     # Run outer loop until the episodes limit is reached or the task is solved
     while not solved and episodeCount < episodeLimit:
+        # Get time elapsed in episode before resetting it and add it to simTime
+        simTime += supervisorPre.supervisor.getTime()
+
         state = supervisorEnv.reset()  # Reset robot and get starting observation
         supervisorPre.episodeScore = 0
         actionProbs = []  # This list holds the probability of each chosen action
@@ -63,11 +70,28 @@ def run():
 
         episodeCount += 1  # Increment episode counter
 
+    # Calculate and print training wall clock time
+    trainingTime = time() - startTime
+    if trainingTime < 60.0:
+        print("Training finished after:", trainingTime, "seconds, real time.")
+    else:
+        rem = round(trainingTime % 60, 2)
+        mins = int(trainingTime / 60)
+        print("Training finished after:", mins, "minutes,", rem, "seconds, real time.")
+
+    # Print simulated time
+    if simTime < 60.0:
+        print("Training finished after:", simTime, "seconds, simulated time.")
+    else:
+        rem = round(simTime % 60, 2)
+        mins = int(simTime / 60)
+        print("Training finished after:", mins, "minutes,", rem, "seconds, simulated time.")
+
     # np.convolve is used as a moving average, see https://stackoverflow.com/a/22621523
     movingAvgN = 10
-    plotData(np.convolve(supervisorPre.episodeScoreList, np.ones((movingAvgN,))/movingAvgN, mode='valid'),
+    plotData(np.convolve(supervisorPre.episodeScoreList, np.ones((movingAvgN,)) / movingAvgN, mode='valid'),
              "episode", "episode score", "Episode scores over episodes")
-    plotData(np.convolve(averageEpisodeActionProbs, np.ones((movingAvgN,))/movingAvgN, mode='valid'),
+    plotData(np.convolve(averageEpisodeActionProbs, np.ones((movingAvgN,)) / movingAvgN, mode='valid'),
              "episode", "average episode action probability", "Average episode action probability over episodes")
 
     if not solved and not supervisorPre.test:
@@ -77,8 +101,8 @@ def run():
             print("Task is not solved, deploying agent for testing...")
         elif solved:
             print("Task is solved, deploying agent for testing...")
-        state = supervisorEnv.reset()
-        supervisorPre.test = True
-        while True:
-            selectedAction, actionProb = agent.work(state, type_="selectActionMax")
-            state, _, _, _ = supervisorEnv.step([selectedAction])
+    state = supervisorEnv.reset()
+    supervisorPre.test = True
+    while True:
+        selectedAction, actionProb = agent.work(state, type_="selectActionMax")
+        state, _, _, _ = supervisorEnv.step([selectedAction])
