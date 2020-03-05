@@ -49,14 +49,12 @@ class CartPoleSupervisor(SupervisorCSV):
         References to robot and the pole endpoint are initialized here, used for building the observation.
         When in test mode (self.test = True) the agent stops being trained and picks actions in a non-stochastic way.
         """
-        print("Robot is spawned in code, if you want to inspect it pause the simulation.")
         super().__init__()
         self.observationSpace = 4
         self.actionSpace = 2
-        self.robot = None
 
-        self.poleEndpoint = self.supervisor.getFromDef("POLE_ENDPOINT")
         self.robot = self.supervisor.getFromDef("ROBOT")
+        self.poleEndpoint = self.supervisor.getFromDef("POLE_ENDPOINT")
 
         self.stepsPerEpisode = 200 # How many steps to run each episode (changing this messes up the solved condition)
         self.episodeScore = 0  # Score accumulated during an episode
