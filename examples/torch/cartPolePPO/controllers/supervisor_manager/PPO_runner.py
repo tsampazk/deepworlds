@@ -1,10 +1,10 @@
 import numpy as np
+from time import time
 
 from supervisor_controller import CartPoleSupervisor
 from keyboard_controller_cartpole import KeyboardControllerCartPole
 from agent.PPO_agent import PPOAgent, Transition
 from utilities import plotData
-from time import time
 
 
 def run():
