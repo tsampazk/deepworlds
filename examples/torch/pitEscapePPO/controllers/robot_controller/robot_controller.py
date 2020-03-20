@@ -1,6 +1,6 @@
 from deepbots.robots.controllers.robot_emitter_receiver_csv import RobotEmitterReceiverCSV
 from numpy import argmax, isnan
-# hello
+
 
 class PitEscapeRobot(RobotEmitterReceiverCSV):
     """
