@@ -101,10 +101,10 @@ class PitEscapeSupervisor(SupervisorCSV):
 
         :return: list, observation: [gyro x, gyro y, gyro z, accelerometer x, accelerometer y, accelerometer z]
         """
-        self.handle_receiver()
-        if self._last_message is not None:
-            return [normalizeToRange(float(self._last_message[i]), -5.0, 5.0, -1.0, 1.0, clip=True) for i in
-                    range(len(self._last_message))]
+        messageReceived = self.handle_receiver()
+        if messageReceived is not None:
+            return [normalizeToRange(float(messageReceived[i]), -5.0, 5.0, -1.0, 1.0, clip=True) for i in
+                    range(len(messageReceived))]
         else:
             return [0.0 for _ in range(self.observationSpace)]
 
@@ -190,8 +190,6 @@ class PitEscapeSupervisor(SupervisorCSV):
         self.robot = self.supervisor.getFromDef(self.robotDef)
         # Reset the simulation physics to start over
         self.supervisor.simulationResetPhysics()
-
-        self._last_message = None
 
     def get_info(self):
         return None
